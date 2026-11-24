@@ -55,13 +55,21 @@ Limits that you must know:
 
 ## Install
 
-### Claude Desktop
+### Claude desktop app: plugin (all systems, Cowork only)
+
+1. Get the file `walkie-desktop-<version>.zip` (`npm run pack && npm run pack:desktop`).
+2. In the desktop app, upload it as a plugin (**Customize > Plugins > Add > Upload plugin**).
+3. Start a **Cowork** session. The desktop app ignores local MCP servers from plugins in chat.
+4. Tell the agent your name. It calls `set_name`. Without a name, the server uses your computer user name.
+
+The plugin starts the bundled server with the Node runtime of the desktop app. An Owner can also upload the zip for the whole organisation.
+
+### Claude desktop app: extension (macOS and Windows, chat)
 
 1. Get the file `walkie-mcp-<version>.mcpb`.
-2. Double-click it, or drag it into the Claude Desktop window.
-3. Optional: enter your name. Other members see this name. If you leave it empty, the server uses your computer user name.
+2. Double-click it, or drag it into the desktop app window.
 
-If your organisation uses the allowlist for desktop extensions, an Owner must upload the bundle first.
+If your organisation uses the allowlist for desktop extensions, an Owner must upload the bundle first. The desktop app for Linux does not install extensions.
 
 ### Claude Code
 
