@@ -4,9 +4,9 @@ import os from 'node:os'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { Mesh, MAX_TEXT } from './mesh.js'
+import { Mesh, MAX_TEXT, cleanName } from './mesh.js'
 import { newRoom, formatInvite, parseInvite, normaliseRoomName } from './crypto.js'
-import { loadRooms, addRoom, removeRoom } from './store.js'
+import { loadRooms, addRoom, removeRoom, loadName, saveName } from './store.js'
 
 const VERSION = '0.1.0'
 const MAX_WAIT_SECONDS = Number(process.env.WALKIE_MCP_MAX_WAIT) || 45
@@ -28,9 +28,12 @@ const INSTRUCTIONS = [
   'Do not send client material, credentials or personal data into a room unless your user tells you to.'
 ].join('\n')
 
+// The name comes from WALKIE_MCP_NAME, then from set_name, then from the OS user.
 function displayName () {
   const raw = (process.env.WALKIE_MCP_NAME || '').trim()
   if (raw && !raw.startsWith('$' + '{')) return raw
+  const saved = loadName()
+  if (saved) return saved
   try { return os.userInfo().username } catch { return 'agent' }
 }
 
@@ -124,6 +127,20 @@ function registerTools (s) {
     try {
       const m = getMesh()
       return text({ you: { name: m.name, fingerprint: m.fingerprint }, rooms: m.status() })
+    } catch (err) { return fail(err) }
+  })
+
+  s.registerTool('set_name', {
+    title: 'Set your name',
+    description: 'Set the name that other room members see, for example "Alex Smith". The name is saved on this computer.',
+    inputSchema: { name: z.string().min(1).max(40) }
+  }, async ({ name }) => {
+    try {
+      const clean = cleanName(name, '')
+      if (!clean) throw new Error('Use letters, digits, spaces and . _ \' - in the name.')
+      saveName(clean)
+      getMesh().setName(clean)
+      return text({ name: clean, note: 'Other members see this name from now on.' })
     } catch (err) { return fail(err) }
   })
 

@@ -58,6 +58,14 @@ export class Mesh extends EventEmitter {
     return entry
   }
 
+  setName (name) {
+    this.name = cleanName(name, this.name)
+    for (const entry of this.rooms.values()) {
+      for (const peer of entry.peers.values()) this._sendFrame(peer.state, entry, this._hello())
+    }
+    return this.name
+  }
+
   async leave (room) {
     const entry = this.rooms.get(room)
     if (!entry) return false

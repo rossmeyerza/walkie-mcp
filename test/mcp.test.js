@@ -37,7 +37,7 @@ test('two MCP servers talk through a room', async t => {
   const bob = await start(t, 'Bob', bootstrap)
 
   const tools = (await alice.client.listTools()).tools.map(x => x.name).sort()
-  assert.deepEqual(tools, ['create_room', 'join_room', 'leave_room', 'list_rooms', 'read_messages', 'send_message'])
+  assert.deepEqual(tools, ['create_room', 'join_room', 'leave_room', 'list_rooms', 'read_messages', 'send_message', 'set_name'])
 
   const created = await call(alice.client, 'create_room', { name: 'pricing' })
   assert.match(created.invite, /^walkie-mcp:v1:pricing-[0-9a-f]{4}:/)
@@ -108,4 +108,18 @@ test('with autojoin off, a saved room is joined only by name', async t => {
   assert.deepEqual((await call(s2.client, 'list_rooms')).rooms, [])
   await call(s2.client, 'join_room', { invite: created.room })
   assert.equal((await call(s2.client, 'list_rooms')).rooms[0].room, created.room)
+})
+
+test('set_name changes the name that peers see and saves it', async t => {
+  const bootstrap = await testnet(t)
+  const a = await start(t, '', bootstrap)
+  const b = await start(t, 'B', bootstrap)
+  const created = await call(a.client, 'create_room', { name: 'names' })
+  await call(b.client, 'join_room', { invite: created.invite })
+  await until(async () => (await call(b.client, 'list_rooms')).rooms[0].peers.length === 1)
+  const set = await call(a.client, 'set_name', { name: 'Alice "the" Smith' })
+  assert.equal(set.name, 'Alice the Smith')
+  await until(async () => (await call(b.client, 'list_rooms')).rooms[0].peers[0].name === 'Alice the Smith')
+  assert.equal(fs.readFileSync(path.join(a.dir, 'name'), 'utf8').trim(), 'Alice the Smith')
+  await assert.rejects(call(a.client, 'set_name', { name: '<<>>' }), /Use letters/)
 })

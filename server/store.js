@@ -51,3 +51,13 @@ export function addRoom ({ room, secret }) {
 export function removeRoom (room) {
   update(rooms => rooms.filter(r => r.room !== room))
 }
+
+const nameFile = () => path.join(ensureDir(), 'name')
+
+export function loadName () {
+  try { return fs.readFileSync(nameFile(), 'utf8').trim() } catch { return '' }
+}
+
+export function saveName (name) {
+  writePrivate(nameFile(), name + '\n')
+}

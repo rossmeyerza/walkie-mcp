@@ -16,10 +16,7 @@
       "command": "node",
       "args": [
         "${__dirname}/server/index.js"
-      ],
-      "env": {
-        "WALKIE_MCP_NAME": "${user_config.display_name}"
-      }
+      ]
     }
   },
   "tools": [
@@ -40,6 +37,10 @@
       "description": "List your rooms, who is connected, and unread counts."
     },
     {
+      "name": "set_name",
+      "description": "Set the name that other room members see."
+    },
+    {
       "name": "send_message",
       "description": "Send a message to everyone connected in a room."
     },
@@ -48,14 +49,6 @@
       "description": "Get new messages, and optionally wait for a reply."
     }
   ],
-  "user_config": {
-    "display_name": {
-      "type": "string",
-      "title": "Your name",
-      "description": "Shown to other members of your rooms. If left empty, your computer username is used.",
-      "required": false
-    }
-  },
   "compatibility": {
     "platforms": [
       "darwin",

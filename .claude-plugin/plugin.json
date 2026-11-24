@@ -13,18 +13,9 @@
         "${CLAUDE_PLUGIN_ROOT}/server/index.js"
       ],
       "env": {
-        "WALKIE_MCP_NAME": "${user_config.display_name}",
         "WALKIE_MCP_CHANNEL": "1",
         "WALKIE_MCP_AUTOJOIN": "0"
       }
-    }
-  },
-  "userConfig": {
-    "display_name": {
-      "type": "string",
-      "title": "Your name",
-      "description": "Shown to other members of your rooms. If left empty, your computer username is used.",
-      "required": false
     }
   },
   "channels": [

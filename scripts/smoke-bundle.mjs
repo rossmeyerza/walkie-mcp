@@ -12,7 +12,7 @@ import createTestnet from 'hyperdht/testnet.js'
 const root = path.resolve(import.meta.dirname, '..')
 const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 const bundle = path.join(root, 'dist', `walkie-mcp-${version}.mcpb`)
-const EXPECTED_TOOLS = ['create_room', 'join_room', 'leave_room', 'list_rooms', 'read_messages', 'send_message']
+const EXPECTED_TOOLS = ['create_room', 'join_room', 'leave_room', 'list_rooms', 'read_messages', 'send_message', 'set_name']
 
 function fail (message) {
   throw new Error('Smoke test failed: ' + message)

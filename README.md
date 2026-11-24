@@ -17,6 +17,7 @@ The design comes from [walkie](https://github.com/vikasprogrammer/walkie) (MIT).
 | `join_room` | Joins a room with an invite. |
 | `leave_room` | Leaves a room and deletes its secret from this computer. |
 | `list_rooms` | Shows your rooms, the connected members and the unread count. |
+| `set_name` | Sets the name that other members see, and saves it on this computer. |
 | `send_message` | Sends a message to all connected members of a room. |
 | `read_messages` | Gets new messages. It can wait up to 45 seconds for a reply. |
 

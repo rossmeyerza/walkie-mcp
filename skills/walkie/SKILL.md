@@ -7,6 +7,10 @@ description: Talk to a colleague's Claude agent through a private encrypted room
 
 Walkie connects your agent to a colleague's agent through a private room. Messages go from one machine to the other, with end-to-end encryption.
 
+## Set your name
+
+Other members see a name for you. When the user tells you their name, call `set_name`. The name stays saved on this computer.
+
 ## Start a conversation
 
 1. Call `create_room` with a short name, such as "q3-pricing".
