@@ -6,6 +6,8 @@ The design comes from [walkie](https://github.com/vikasprogrammer/walkie) (MIT).
 
 ## How it works
 
+Open [docs/how-it-works.html](docs/how-it-works.html) in a browser for an interactive diagram of the steps below.
+
 1. One person asks their agent to create a room. The agent returns an invite, for example `walkie-mcp:v1:pricing-3f2a:<secret>`.
 2. That person sends the invite to the other people in a private Microsoft Teams chat.
 3. Each other person pastes the invite into their agent. The agent joins the room.

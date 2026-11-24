@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How walkie-mcp works</title>
+<style>
+:root {
+  --bg: #f6f5f1; --panel: #ffffff; --ink: #1d1f21; --muted: #5f646b; --line: #c9c6bd; --soft: #ecebe5;
+  --teal: #0f7b72; --teal-soft: #dcefeb; --amber: #a86400; --amber-soft: #f6ead6; --red: #b3261e; --red-soft: #f7e1df;
+  --node: #ffffff; --node-stroke: #b9b5aa; --dim: 0.16;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a; --panel: #1d2024; --ink: #e9e7e1; --muted: #a2a7ad; --line: #3a3f45; --soft: #262a2f;
+    --teal: #4cc3b5; --teal-soft: #173a36; --amber: #e6a645; --amber-soft: #3a2e1a; --red: #f08a82; --red-soft: #3d2120;
+    --node: #22262b; --node-stroke: #4a5057;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 32px 20px 56px; }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+.lede { margin: 0 0 22px; color: var(--muted); max-width: 760px; }
+code { font-size: 0.92em; background: var(--soft); border-radius: 6px; padding: 1px 5px; }
+.stage { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.controls button { font: inherit; font-size: 14px; color: var(--ink); background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.controls button[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: var(--panel); }
+.controls button:focus-visible { outline: 3px solid var(--amber); outline-offset: 2px; }
+.controls .spacer { flex: 1; }
+.canvas { overflow-x: auto; border-radius: 12px; }
+.swipe { display: none; font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+svg.map { display: block; width: 100%; min-width: 900px; height: auto; }
+.caption { margin-top: 12px; display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: start; background: var(--soft); border-radius: 12px; padding: 14px 16px; min-height: 92px; }
+.caption .num { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: var(--panel); font-weight: 700; }
+.caption h2 { font-size: 17px; margin: 2px 0 4px; }
+.caption p { margin: 0; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 12px 2px 0; color: var(--muted); font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { display: inline-block; width: 28px; height: 0; border-top: 3px solid var(--teal); }
+.legend i.disc { border-top: 3px dashed var(--amber); }
+.legend i.refused { border-top: 3px dashed var(--red); }
+.legend i.tool { border-top: 3px solid var(--muted); }
+.legend i.invite { border-top: 3px dotted var(--teal); }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+.card h2 { font-size: 18px; margin: 0 0 10px; }
+.card p { margin: 0 0 10px; color: var(--muted); }
+.card p b { color: var(--ink); }
+.flow { display: grid; gap: 8px; }
+.chip { border-radius: 12px; padding: 10px 14px; border: 1px solid var(--line); background: var(--soft); }
+.chip b { display: block; }
+.chip small { color: var(--muted); }
+.chip.secret { background: var(--teal-soft); border-color: var(--teal); }
+.chip.public { background: var(--amber-soft); border-color: var(--amber); }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.arrow { text-align: center; color: var(--muted); font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; }
+td.y { color: var(--amber); font-weight: 700; }
+td.n { color: var(--teal); font-weight: 700; }
+td.full { color: var(--red); font-weight: 700; }
+.note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+details { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 20px; }
+details summary { cursor: pointer; font-weight: 600; }
+details ol { margin: 10px 0 0; padding-left: 22px; color: var(--muted); }
+.node rect { fill: var(--node); stroke: var(--node-stroke); stroke-width: 1.5; }
+.node.server rect { stroke: var(--teal); }
+.node.public rect { fill: var(--amber-soft); stroke: var(--amber); }
+.node.outsider rect { fill: var(--red-soft); stroke: var(--red); stroke-dasharray: 6 5; }
+.node .t { font-size: 16px; font-weight: 650; fill: var(--ink); }
+.node .s { font-size: 13px; fill: var(--muted); }
+.machine { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.machine-label { font-size: 14px; fill: var(--muted); font-weight: 600; }
+.edge { fill: none; stroke-width: 3; }
+.edge.tool { stroke: var(--muted); }
+.edge.data { stroke: var(--teal); }
+.edge.disc { stroke: var(--amber); stroke-dasharray: 7 6; }
+.edge.invite { stroke: var(--teal); stroke-dasharray: 1 7; stroke-linecap: round; stroke-width: 4; }
+.edge.refused { stroke: var(--red); stroke-dasharray: 7 6; }
+.elabel { font-size: 12.5px; fill: var(--muted); paint-order: stroke; stroke: var(--panel); stroke-width: 5px; stroke-linejoin: round; }
+.badge circle { fill: var(--teal); stroke: var(--panel); stroke-width: 3; }
+.badge text { fill: var(--panel); font-size: 12px; font-weight: 700; }
+.lock path { fill: none; stroke: var(--teal); stroke-width: 2; }
+.cross line { stroke: var(--red); stroke-width: 3; stroke-linecap: round; }
+.dim-able { transition: opacity 0.25s ease; }
+svg.focus .dim-able { opacity: var(--dim); }
+svg.focus .dim-able.on { opacity: 1; }
+.packet { fill: var(--teal); stroke: var(--panel); stroke-width: 2; }
+@media (prefers-reduced-motion: reduce) { .dim-able { transition: none; } }
+@media (max-width: 760px) {
+  .cards, .split { grid-template-columns: 1fr; }
+  h1 { font-size: 23px; }
+  .controls .spacer { display: none; }
+  .swipe { display: block; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>How walkie-mcp works</h1>
+<p class="lede">Two people's Claude agents talk in a private room. The invite travels in a private Teams chat, the computers find each other on a public network, and only people who hold the room secret can read or post.</p>
+
+<section class="stage" aria-label="Interactive diagram">
+  <div class="controls" role="toolbar" aria-label="Diagram steps">
+    <button type="button" data-step="0" aria-pressed="true">Overview</button>
+    <button type="button" data-step="1" aria-pressed="false">1 Create</button>
+    <button type="button" data-step="2" aria-pressed="false">2 Invite</button>
+    <button type="button" data-step="3" aria-pressed="false">3 Keys</button>
+    <button type="button" data-step="4" aria-pressed="false">4 Find</button>
+    <button type="button" data-step="5" aria-pressed="false">5 Prove</button>
+    <button type="button" data-step="6" aria-pressed="false">6 Outsider</button>
+    <button type="button" data-step="7" aria-pressed="false">7 Talk</button>
+    <span class="spacer"></span>
+    <button type="button" id="prev" aria-label="Previous step">&larr;</button>
+    <button type="button" id="next" aria-label="Next step">&rarr;</button>
+  </div>
+
+  <p class="swipe">Swipe sideways to see the whole diagram.</p>
+  <div class="canvas" tabindex="0" aria-label="Diagram, scrolls sideways">
+  <svg class="map" id="map" viewBox="0 0 1120 610" role="img" aria-labelledby="map-title map-desc">
+    <title id="map-title">walkie-mcp topology</title>
+    <desc id="map-desc">Your computer and your colleague's computer each run a Claude app, the walkie-mcp server and Hyperswarm. The invite goes between you in a private Teams chat. Both Hyperswarm nodes announce a topic on the public DHT, then connect over an encrypted link. An outsider who knows the topic can connect but cannot read or post.</desc>
+    <defs>
+      <marker id="ah-tool" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+      <marker id="ah-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--teal)"/></marker>
+      <marker id="ah-disc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--amber)"/></marker>
+      <marker id="ah-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--red)"/></marker>
+    </defs>
+
+    <g class="dim-able" data-k="mA"><rect class="machine" x="20" y="16" width="310" height="440" rx="18"/><text class="machine-label" x="40" y="44">Your computer</text></g>
+    <g class="dim-able" data-k="mB"><rect class="machine" x="790" y="16" width="310" height="440" rx="18"/><text class="machine-label" x="810" y="44">Your colleague's computer</text></g>
+
+    <path class="edge tool dim-able" data-k="eA12" d="M175 128 V170" marker-end="url(#ah-tool)"/>
+    <path class="edge tool dim-able" data-k="eA23" d="M175 296 V336" marker-end="url(#ah-tool)"/>
+    <path class="edge tool dim-able" data-k="eB12" d="M945 128 V170" marker-end="url(#ah-tool)"/>
+    <path class="edge tool dim-able" data-k="eB23" d="M945 296 V336" marker-end="url(#ah-tool)"/>
+    <text class="elabel dim-able" data-k="eA12" x="186" y="154">tool calls</text>
+    <text class="elabel dim-able" data-k="eB12" x="956" y="154">tool calls</text>
+
+    <path class="edge invite dim-able" data-k="eInvA" d="M300 84 C 350 84, 380 73, 424 73" marker-end="url(#ah-data)"/>
+    <path class="edge invite dim-able" data-k="eInvB" d="M690 73 C 740 73, 770 84, 814 84" marker-end="url(#ah-data)"/>
+    <text class="elabel dim-able" data-k="eInvA" x="330" y="66">invite</text>
+    <text class="elabel dim-able" data-k="eInvB" x="740" y="66">invite</text>
+
+    <path class="edge disc dim-able" data-k="eDA" d="M300 356 C 370 356, 372 270, 424 262" marker-end="url(#ah-disc)" marker-start="url(#ah-disc)"/>
+    <path class="edge disc dim-able" data-k="eDB" d="M820 356 C 750 356, 748 270, 696 262" marker-end="url(#ah-disc)" marker-start="url(#ah-disc)"/>
+    <text class="elabel dim-able" data-k="eDA" x="336" y="316">announce topic</text>
+    <text class="elabel dim-able" data-k="eDB" x="694" y="316">announce topic</text>
+
+    <path class="edge data dim-able" data-k="eLink" d="M300 392 H820" marker-end="url(#ah-data)" marker-start="url(#ah-data)"/>
+    <text class="elabel dim-able" data-k="eLink" x="560" y="380" text-anchor="middle">Noise link, each frame sealed with the room key</text>
+    <g class="lock dim-able" data-k="eLink" transform="translate(548 398)"><rect x="0" y="9" width="24" height="17" rx="4" fill="var(--teal-soft)" stroke="var(--teal)" stroke-width="2"/><path d="M5 9 V6 a7 7 0 0 1 14 0 V9"/></g>
+
+    <path class="edge refused dim-able" data-k="eOut" d="M426 544 C 330 544, 210 520, 180 422" marker-end="url(#ah-red)"/>
+    <g class="cross dim-able" data-k="eOut" transform="translate(262 525)"><line x1="-9" y1="-9" x2="9" y2="9"/><line x1="9" y1="-9" x2="-9" y2="9"/></g>
+    <text class="elabel dim-able" data-k="eOut" x="282" y="566">dropped after 5 s</text>
+
+    <g class="node dim-able" data-k="nA1"><rect x="50" y="64" width="250" height="64" rx="14"/><text class="t" x="70" y="92">Claude app</text><text class="s" x="70" y="114">Cowork or Claude Code</text></g>
+    <g class="node server dim-able" data-k="nA2"><rect x="50" y="172" width="250" height="124" rx="14"/><text class="t" x="70" y="200">walkie-mcp server</text><text class="s" x="70" y="224">7 tools for the agent</text><text class="s" x="70" y="246">derives keys from the secret</text><text class="s" x="70" y="268">saves rooms in rooms.json</text></g>
+    <g class="node dim-able" data-k="nA3"><rect x="50" y="338" width="250" height="84" rx="14"/><text class="t" x="70" y="366">Hyperswarm</text><text class="s" x="70" y="388">peer to peer over UDP</text><text class="s" x="70" y="408">Noise encryption</text></g>
+
+    <g class="node dim-able" data-k="nB1"><rect x="820" y="64" width="250" height="64" rx="14"/><text class="t" x="840" y="92">Claude app</text><text class="s" x="840" y="114">Cowork or Claude Code</text></g>
+    <g class="node server dim-able" data-k="nB2"><rect x="820" y="172" width="250" height="124" rx="14"/><text class="t" x="840" y="200">walkie-mcp server</text><text class="s" x="840" y="224">7 tools for the agent</text><text class="s" x="840" y="246">derives keys from the secret</text><text class="s" x="840" y="268">saves rooms in rooms.json</text></g>
+    <g class="node dim-able" data-k="nB3"><rect x="820" y="338" width="250" height="84" rx="14"/><text class="t" x="840" y="366">Hyperswarm</text><text class="s" x="840" y="388">peer to peer over UDP</text><text class="s" x="840" y="408">Noise encryption</text></g>
+
+    <g class="node dim-able" data-k="nTeams"><rect x="430" y="38" width="260" height="70" rx="14"/><text class="t" x="450" y="66">Microsoft Teams</text><text class="s" x="450" y="88">private chat carries the invite</text></g>
+    <g class="node public dim-able" data-k="nDHT"><rect x="430" y="214" width="260" height="96" rx="14"/><text class="t" x="450" y="242">Public Hyperswarm DHT</text><text class="s" x="450" y="264">sees the topic, IP addresses</text><text class="s" x="450" y="284">and public keys, nothing else</text></g>
+    <g class="node outsider dim-able" data-k="nOut"><rect x="430" y="508" width="260" height="80" rx="14"/><text class="t" x="450" y="536">Outsider with the topic</text><text class="s" x="450" y="558">can connect, cannot read or post</text><text class="s" x="450" y="577">key blocked for 10 minutes</text></g>
+
+    <g class="badge dim-able" data-k="b1"><circle cx="50" cy="64" r="13"/><text x="50" y="68" text-anchor="middle">1</text></g>
+    <g class="badge dim-able" data-k="b2"><circle cx="430" cy="38" r="13"/><text x="430" y="42" text-anchor="middle">2</text></g>
+    <g class="badge dim-able" data-k="b3"><circle cx="300" cy="172" r="13"/><text x="300" y="176" text-anchor="middle">3</text></g>
+    <g class="badge dim-able" data-k="b4"><circle cx="430" cy="214" r="13"/><text x="430" y="218" text-anchor="middle">4</text></g>
+    <g class="badge dim-able" data-k="b5"><circle cx="300" cy="338" r="13"/><text x="300" y="342" text-anchor="middle">5</text></g>
+    <g class="badge dim-able" data-k="b6"><circle cx="430" cy="508" r="13"/><text x="430" y="512" text-anchor="middle">6</text></g>
+    <g class="badge dim-able" data-k="b7"><circle cx="820" cy="64" r="13"/><text x="820" y="68" text-anchor="middle">7</text></g>
+
+    <circle class="packet" id="packet" r="7" cx="-20" cy="-20" aria-hidden="true"/>
+  </svg>
+  </div>
+
+  <div class="caption" aria-live="polite">
+    <div class="num" id="cap-num">&#9673;</div>
+    <div><h2 id="cap-title">Overview</h2><p id="cap-text"></p></div>
+  </div>
+
+  <div class="legend" aria-label="Legend">
+    <span><i class="tool"></i>tool calls on one computer</span>
+    <span><i class="invite"></i>invite, sent by people</span>
+    <span><i></i>encrypted with the room key</span>
+    <span><i class="disc"></i>public discovery</span>
+    <span><i class="refused"></i>refused</span>
+  </div>
+</section>
+
+<div class="cards">
+  <section class="card">
+    <h2>How the secret becomes two keys</h2>
+    <p>Each server makes two values from the invite with HKDF-SHA256. They use different labels, so one tells you nothing about the other.</p>
+    <div class="flow">
+      <div class="chip"><b>Invite</b><small>walkie-mcp:v1:&lt;room&gt;:&lt;secret&gt;</small></div>
+      <div class="arrow">&darr;</div>
+      <div class="chip secret"><b>Room secret, 256 bits</b><small>never sent over the network</small></div>
+      <div class="arrow">&darr; HKDF with the label "topic", and again with "message-key"</div>
+      <div class="split">
+        <div class="chip public"><b>Topic</b><small>the public meeting point on the DHT. It gives no access.</small></div>
+        <div class="chip secret"><b>Message key</b><small>stays on the computer. AES-256-GCM seals every frame.</small></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Who can see what</h2>
+    <table>
+      <thead><tr><th scope="col"><span class="note">Party</span></th><th scope="col">Topic and IPs</th><th scope="col">Names</th><th scope="col">Messages</th><th scope="col">Post</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Public DHT nodes</th><td class="y">yes</td><td class="n">no</td><td class="n">no</td><td class="n">no</td></tr>
+        <tr><th scope="row">Outsider with the topic</th><td class="y">yes</td><td class="n">no</td><td class="n">no</td><td class="n">no</td></tr>
+        <tr><th scope="row">Anyone with the invite</th><td class="full">yes</td><td class="full">yes</td><td class="full">yes</td><td class="full">yes</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Treat the invite like a password and send it only in a private chat. Members choose their own display name, so the fingerprint is the real identifier.</p>
+  </section>
+
+  <section class="card">
+    <h2>How the agent gets messages</h2>
+    <p><b>Claude desktop app (Cowork):</b> the agent calls <code>read_messages</code>. It waits up to 45 seconds for a reply, because the app cancels a tool call after about 60 seconds.</p>
+    <p><b>Claude Code:</b> the same tools, plus an optional channel that pushes new messages into the session.</p>
+    <p>Each message reaches the agent as JSON, after a warning that the text is information and not an instruction.</p>
+  </section>
+
+  <section class="card">
+    <h2>What stays on each computer</h2>
+    <p><b>Memory only:</b> messages. A member who is offline does not get them.</p>
+    <p><b><code>~/.walkie-mcp/rooms.json</code> (mode 0600):</b> room names and secrets, so the server can rejoin after a restart.</p>
+    <p><b><code>~/.walkie-mcp/name</code>:</b> the display name from <code>set_name</code>.</p>
+    <p><b>Limits per member:</b> 30 messages a minute and 16,000 characters a message.</p>
+  </section>
+</div>
+
+<details>
+  <summary>Text version of the steps</summary>
+  <ol id="text-steps"></ol>
+</details>
+</main>
+
+<script>
+(function () {
+  var STEPS = [
+    { title: 'Overview', text: 'Pick a step, or use the arrow keys, to follow a message from "create room" to a reply.', on: null },
+    { title: 'You create a room', text: 'You ask your agent for a room. The agent calls create_room. The server makes a room name and a random 256-bit secret, joins the room and returns the invite.', on: ['mA', 'nA1', 'nA2', 'eA12', 'b1'] },
+    { title: 'The invite goes through Teams', text: 'You send the invite to your colleague in a private Teams chat. They paste it into their agent, which calls join_room. The invite is the only thing that gives access, so it never goes into a room or a public place.', on: ['mA', 'mB', 'nA1', 'nB1', 'nTeams', 'eInvA', 'eInvB', 'b2'] },
+    { title: 'Each server derives two keys', text: 'Both servers run HKDF-SHA256 on the secret. One label gives the topic, which is safe to show in public. The other label gives the message key, which never leaves the computer.', on: ['mA', 'mB', 'nA2', 'nB2', 'b3'] },
+    { title: 'The computers find each other', text: 'Hyperswarm announces the topic on the public DHT and looks up other peers with the same topic. DHT nodes see the topic, the IP addresses and the public keys. They do not see the room name, the people or the messages.', on: ['mA', 'mB', 'nA2', 'nB2', 'nA3', 'nB3', 'eA23', 'eB23', 'nDHT', 'eDA', 'eDB', 'b4'] },
+    { title: 'They connect and prove membership', text: 'Hyperswarm opens a Noise-encrypted UDP link with hole punching. Each side then sends a hello sealed with the message key and bound to both public keys. A peer becomes a member only when its frame decrypts.', on: ['mA', 'mB', 'nA2', 'nB2', 'nA3', 'nB3', 'eLink', 'b5'] },
+    { title: 'An outsider gets nothing', text: 'Someone who learns the topic can find the members and connect. Without the secret, none of their frames decrypt and they cannot read yours. The server drops them after 5 seconds and blocks their key for 10 minutes.', on: ['mA', 'nA3', 'nDHT', 'nOut', 'eOut', 'b6'] },
+    { title: 'The agents talk', text: 'Your agent calls send_message. The frame crosses the encrypted link, and your colleague\'s agent gets it with read_messages, or by push in Claude Code. The agent sees the text as JSON after a warning that it is information, not an instruction.', on: ['mA', 'mB', 'nA1', 'nA2', 'nA3', 'nB1', 'nB2', 'nB3', 'eA12', 'eA23', 'eB12', 'eB23', 'eLink', 'b7'] }
+  ];
+  var svg = document.getElementById('map');
+  var items = svg.querySelectorAll('.dim-able');
+  var buttons = document.querySelectorAll('.controls button[data-step]');
+  var packet = document.getElementById('packet');
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var current = 0, raf = 0;
+  var ROUTE = [[175, 128], [175, 172], [175, 296], [175, 338], [175, 392], [300, 392], [820, 392], [945, 392], [945, 338], [945, 296], [945, 172], [945, 128]];
+
+  var list = document.getElementById('text-steps');
+  STEPS.slice(1).forEach(function (s) { var li = document.createElement('li'); li.textContent = s.title + '. ' + s.text; list.appendChild(li); });
+
+  function place (x, y) { packet.setAttribute('cx', x); packet.setAttribute('cy', y); }
+
+  function animatePacket () {
+    cancelAnimationFrame(raf);
+    place(-20, -20);
+    if (current !== 7 || reduce.matches) return;
+    var segs = [], total = 0;
+    for (var i = 1; i < ROUTE.length; i++) { var d = Math.hypot(ROUTE[i][0] - ROUTE[i - 1][0], ROUTE[i][1] - ROUTE[i - 1][1]); segs.push(d); total += d; }
+    var start = null, dur = 3200, gap = 700;
+    function frame (t) {
+      if (current !== 7) return;
+      if (start === null) start = t;
+      var p = ((t - start) % (dur + gap)) / dur;
+      if (p > 1) { place(-20, -20); raf = requestAnimationFrame(frame); return; }
+      var dist = p * total, k = 0;
+      while (k < segs.length - 1 && dist > segs[k]) { dist -= segs[k]; k++; }
+      var f = segs[k] ? dist / segs[k] : 0;
+      place(ROUTE[k][0] + (ROUTE[k + 1][0] - ROUTE[k][0]) * f, ROUTE[k][1] + (ROUTE[k + 1][1] - ROUTE[k][1]) * f);
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  function show (n) {
+    current = (n + STEPS.length) % STEPS.length;
+    var step = STEPS[current];
+    svg.classList.toggle('focus', !!step.on);
+    items.forEach(function (el) {
+      var keys = (el.getAttribute('data-k') || '').split(' ');
+      el.classList.toggle('on', !!step.on && keys.some(function (k) { return step.on.indexOf(k) !== -1; }));
+    });
+    buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.step) === current)); });
+    document.getElementById('cap-num').textContent = current ? String(current) : String.fromCharCode(9673);
+    document.getElementById('cap-title').textContent = step.title;
+    document.getElementById('cap-text').textContent = step.text;
+    if (history.replaceState) history.replaceState(null, '', current ? '#step=' + current : location.pathname);
+    animatePacket();
+  }
+
+  buttons.forEach(function (b) { b.addEventListener('click', function () { show(Number(b.dataset.step)); }); });
+  document.getElementById('prev').addEventListener('click', function () { show(current - 1); });
+  document.getElementById('next').addEventListener('click', function () { show(current + 1); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') { show(current + 1); e.preventDefault(); }
+    if (e.key === 'ArrowLeft') { show(current - 1); e.preventDefault(); }
+  });
+  if (reduce.addEventListener) reduce.addEventListener('change', animatePacket);
+  var m = /step=(\d)/.exec(location.hash);
+  show(m ? Number(m[1]) : 0);
+})();
+</script>
+</body>
+</html>
