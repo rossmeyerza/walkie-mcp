@@ -14,7 +14,8 @@
       ],
       "env": {
         "WALKIE_MCP_NAME": "${user_config.display_name}",
-        "WALKIE_MCP_CHANNEL": "1"
+        "WALKIE_MCP_CHANNEL": "1",
+        "WALKIE_MCP_AUTOJOIN": "0"
       }
     }
   },

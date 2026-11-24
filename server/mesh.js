@@ -63,7 +63,10 @@ export class Mesh extends EventEmitter {
     if (!entry) return false
     for (const peer of entry.peers.values()) this._sendFrame(peer.state, entry, { t: 'bye' })
     this.rooms.delete(room)
-    for (const state of this.conns) state.rooms.delete(room)
+    for (const state of this.conns) {
+      state.rooms.delete(room)
+      if (!state.rooms.size) this._startAuthTimer(state)
+    }
     await this.swarm.leave(entry.topic)
     return true
   }
@@ -139,24 +142,26 @@ export class Mesh extends EventEmitter {
 
   _onConnection (conn) {
     const key = conn.remotePublicKey.toString('hex')
-    const state = { conn, key, remotePublicKey: conn.remotePublicKey, fingerprint: fingerprint(conn.remotePublicKey), rooms: new Set(), chunks: [], size: 0, bad: 0, sent: [] }
-    this.conns.add(state)
-    if ([...this.conns].filter(s => !s.rooms.size).length > MAX_UNAUTHENTICATED) return conn.destroy()
-    for (const entry of this.rooms.values()) this._sendFrame(state, entry, this._hello())
-    this._startAuthTimer(state)
-    conn.on('data', data => this._onData(state, data))
+    const state = { conn, key, remotePublicKey: conn.remotePublicKey, fingerprint: fingerprint(conn.remotePublicKey), rooms: new Set(), authed: false, chunks: [], size: 0, bad: 0, sent: [] }
+    // Attach the handlers first, so that a refused connection still leaves this.conns.
     conn.on('error', () => {})
     conn.on('close', () => this._onClose(state))
+    this.conns.add(state)
+    if ([...this.conns].filter(s => !s.rooms.size).length > MAX_UNAUTHENTICATED) return conn.destroy()
+    conn.on('data', data => this._onData(state, data))
+    for (const entry of this.rooms.values()) this._sendFrame(state, entry, this._hello())
+    this._startAuthTimer(state)
   }
 
-  // A peer that cannot prove it holds a room secret is dropped and banned.
+  // A peer that shares no room is dropped. A peer that never proved membership
+  // of any room is also banned. A former member is not, so it can come back.
   _startAuthTimer (state) {
     clearTimeout(state.timer)
     state.timer = setTimeout(() => { if (!state.rooms.size) this._reject(state) }, AUTH_TIMEOUT_MS)
   }
 
   _reject (state) {
-    this.banned.set(state.key, Date.now() + BAN_MS)
+    if (!state.authed) this.banned.set(state.key, Date.now() + BAN_MS)
     state.conn.destroy()
   }
 
@@ -242,6 +247,7 @@ export class Mesh extends EventEmitter {
     const name = cleanName(payload.name)
     entry.peers.set(state.key, { state, name, fingerprint: state.fingerprint })
     state.rooms.add(entry.room)
+    state.authed = true
     clearTimeout(state.timer)
     if (!known) this._deliver(entry, { kind: 'joined', from: name, fingerprint: state.fingerprint })
   }

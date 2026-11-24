@@ -138,3 +138,41 @@ test('fingerprints are 16 hex characters and peers are keyed by the full key', a
   assert.match(a.fingerprint, /^[0-9a-f]{16}$/)
   assert.deepEqual([...a.rooms.get(room.room).peers.keys()], [b.publicKey.toString('hex')])
 })
+
+test('junk connections do not lock out real members', async t => {
+  const bootstrap = await testnet(t)
+  const { EventEmitter } = await import('node:events')
+  const crypto = await import('node:crypto')
+  const room = newRoom('junk')
+  const a = new Mesh({ name: 'A', bootstrap })
+  const b = new Mesh({ name: 'B', bootstrap })
+  t.after(() => Promise.all([a.destroy(), b.destroy()]))
+  a.join(room)
+  for (let i = 0; i < 20; i++) {
+    const conn = new EventEmitter()
+    conn.remotePublicKey = crypto.randomBytes(32)
+    conn.writable = true
+    conn.write = () => true
+    conn.destroy = () => { if (!conn.destroyed) { conn.destroyed = true; conn.writable = false; conn.emit('close') } }
+    a._onConnection(conn)
+  }
+  assert.ok(a.conns.size <= 16, 'refused connections leave the set')
+  b.join(room)
+  await until(connected(a, room.room))
+})
+
+test('a member who leaves can join again at once', async t => {
+  const bootstrap = await testnet(t)
+  const room = newRoom('again')
+  const a = new Mesh({ name: 'A', bootstrap })
+  const b = new Mesh({ name: 'B', bootstrap })
+  t.after(() => Promise.all([a.destroy(), b.destroy()]))
+  a.join(room); b.join(room)
+  await until(connected(b, room.room))
+  await a.leave(room.room)
+  await until(() => !connected(b, room.room)())
+  await new Promise(resolve => setTimeout(resolve, 6000)) // past the 5 s timer, inside the ban window
+  a.join(room)
+  await until(connected(b, room.room), 20000)
+  await until(connected(a, room.room), 20000)
+})

@@ -98,3 +98,14 @@ test('sessions that share a data folder merge rooms.json', async t => {
   const z = await call(s1.client, 'create_room', { name: 'z' })
   assert.deepEqual(rooms(), [y.room, z.room].sort(), 'a leave is not undone by another session')
 })
+
+test('with autojoin off, a saved room is joined only by name', async t => {
+  const bootstrap = await testnet(t)
+  const s1 = await start(t, 'One', bootstrap)
+  const created = await call(s1.client, 'create_room', { name: 'saved' })
+  const s2 = await start(t, 'Two', bootstrap, { WALKIE_MCP_DIR: s1.dir, WALKIE_MCP_AUTOJOIN: '0' })
+  await new Promise(resolve => setTimeout(resolve, 300))
+  assert.deepEqual((await call(s2.client, 'list_rooms')).rooms, [])
+  await call(s2.client, 'join_room', { invite: created.room })
+  assert.equal((await call(s2.client, 'list_rooms')).rooms[0].room, created.room)
+})
