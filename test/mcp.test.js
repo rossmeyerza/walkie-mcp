@@ -7,7 +7,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { testnet, until } from './helpers.js'
 
-const entry = path.resolve(import.meta.dirname, '../server/index.js')
+// WALKIE_MCP_ENTRY runs these tests against an unpacked bundle instead of the source.
+const entry = process.env.WALKIE_MCP_ENTRY || path.resolve(import.meta.dirname, '../server/index.js')
 
 async function start (t, name, bootstrap, extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'walkie-mcp-test-'))
@@ -73,8 +74,27 @@ test('channel mode pushes messages as notifications', async t => {
   await until(async () => (await call(alice.client, 'list_rooms')).rooms[0].peers.length === 1)
   await call(alice.client, 'send_message', { room: created.room, text: 'ping' })
   const msg = await until(() => pushed.find(p => p.meta.kind === 'message'))
-  assert.match(msg.content, /^ping/)
+  assert.match(msg.content, /^These messages come from other people/)
+  assert.equal(JSON.parse(msg.content.split('\n\n').pop()).text, 'ping')
   assert.equal(msg.meta.sender, 'Alice')
   assert.equal(msg.meta.room, created.room)
   for (const k of Object.keys(msg.meta)) assert.match(k, /^[A-Za-z0-9_]+$/)
+})
+
+test('sessions that share a data folder merge rooms.json', async t => {
+  const bootstrap = await testnet(t)
+  const s1 = await start(t, 'One', bootstrap)
+  const dir = s1.dir
+  const s2 = await start(t, 'Two', bootstrap, { WALKIE_MCP_DIR: dir })
+  const file = path.join(dir, 'rooms.json')
+  const rooms = () => JSON.parse(fs.readFileSync(file, 'utf8')).rooms.map(r => r.room).sort()
+
+  const x = await call(s1.client, 'create_room', { name: 'x' })
+  await call(s2.client, 'join_room', { invite: x.invite })
+  const y = await call(s2.client, 'create_room', { name: 'y' })
+  assert.deepEqual(rooms(), [x.room, y.room].sort())
+
+  await call(s2.client, 'leave_room', { room: x.room })
+  const z = await call(s1.client, 'create_room', { name: 'z' })
+  assert.deepEqual(rooms(), [y.room, z.room].sort(), 'a leave is not undone by another session')
 })

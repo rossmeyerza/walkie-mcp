@@ -15,6 +15,8 @@ test('bad invites are rejected', () => {
   assert.throws(() => parseInvite('walkie:room:secret'))
   assert.throws(() => parseInvite(invite.slice(0, -3)))
   assert.throws(() => parseInvite(invite + ':extra'))
+  const secret = newRoom('x').secret
+  assert.throws(() => parseInvite('walkie-mcp:v1:abc-:' + secret), /room name/)
 })
 
 test('the topic and the message key are independent', () => {

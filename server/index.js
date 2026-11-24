@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { Mesh, MAX_TEXT } from './mesh.js'
 import { newRoom, formatInvite, parseInvite, normaliseRoomName } from './crypto.js'
-import { loadRooms, saveRooms } from './store.js'
+import { loadRooms, addRoom, removeRoom } from './store.js'
 
 const VERSION = '0.1.0'
 const MAX_WAIT_SECONDS = Number(process.env.WALKIE_MCP_MAX_WAIT) || 45
@@ -40,21 +40,19 @@ function getMesh () {
   // WALKIE_MCP_BOOTSTRAP is for tests only: "host:port,host:port" of a private DHT.
   const bootstrap = process.env.WALKIE_MCP_BOOTSTRAP ? process.env.WALKIE_MCP_BOOTSTRAP.split(',') : undefined
   mesh = new Mesh({ name: displayName(), bootstrap })
-  for (const saved of loadRooms()) {
-    try { mesh.join(parseInvite(formatInvite(saved))) } catch (err) { console.error('walkie-mcp: skipped a saved room: ' + err.message) }
-  }
   mesh.on('message', pushToChannel)
+  let saved = []
+  try { saved = loadRooms() } catch (err) { console.error('walkie-mcp: could not load saved rooms: ' + err.message) }
+  for (const entry of saved) {
+    try { mesh.join(parseInvite(formatInvite(entry))) } catch (err) { console.error('walkie-mcp: skipped a saved room: ' + err.message) }
+  }
   return mesh
 }
 
-function persist () {
-  saveRooms([...getMesh().rooms.values()].map(({ room, secret }) => ({ room, secret })))
-}
-
 function describe (m) {
-  if (m.kind === 'joined') return { room: m.room, event: m.from + ' joined', fingerprint: m.fingerprint }
-  if (m.kind === 'left') return { room: m.room, event: m.from + ' left', fingerprint: m.fingerprint }
-  return { room: m.room, from: m.from, fingerprint: m.fingerprint, id: m.id, text: m.text }
+  const base = { room: m.room, from: m.from, fingerprint: m.fingerprint }
+  if (m.kind !== 'message') return { ...base, event: m.kind }
+  return { ...base, id: m.id, text: m.text, ...(m.pushed ? { already_pushed: true } : {}) }
 }
 
 const server = new McpServer(
@@ -65,9 +63,11 @@ const server = new McpServer(
 let initialised = false
 function pushToChannel (m) {
   if (!CHANNEL || !initialised) return
-  const d = describe(m)
+  m.pushed = true
   const meta = { room: m.room, kind: m.kind, sender: m.from, fingerprint: m.fingerprint, ...(m.id ? { message_id: m.id } : {}) }
-  const content = (d.text ?? d.event) + '\n\n(' + UNTRUSTED + ' Reply with send_message.)'
+  // The warning comes first and the sender's data is JSON-encoded, so the text
+  // cannot pretend to end the notification or add new parts to it.
+  const content = UNTRUSTED + ' Reply with send_message.\n\n' + JSON.stringify(describe(m))
   server.server.notification({ method: 'notifications/claude/channel', params: { content, meta } }).catch(() => {})
 }
 
@@ -82,7 +82,7 @@ function registerTools (s) {
     try {
       const created = newRoom(name)
       getMesh().join(created)
-      persist()
+      addRoom(created)
       return text({ room: created.room, invite: formatInvite(created), next_step: 'Give the invite to your user. They send it to the other person privately. Anyone with the invite can read and post in the room.' })
     } catch (err) { return fail(err) }
   })
@@ -95,7 +95,7 @@ function registerTools (s) {
     try {
       const parsed = parseInvite(invite)
       getMesh().join(parsed)
-      persist()
+      addRoom(parsed)
       return text({ room: parsed.room, joined: true, next_step: 'Call read_messages with wait_seconds to see who is in the room and what they say.' })
     } catch (err) { return fail(err) }
   })
@@ -106,8 +106,9 @@ function registerTools (s) {
     inputSchema: { room: z.string().max(40) }
   }, async ({ room }) => {
     try {
-      const left = await getMesh().leave(normaliseRoomName(room))
-      persist()
+      const name = normaliseRoomName(room)
+      const left = await getMesh().leave(name)
+      removeRoom(name)
       return text(left ? 'You left the room "' + room + '".' : 'You are not in the room "' + room + '".')
     } catch (err) { return fail(err) }
   })
@@ -117,8 +118,10 @@ function registerTools (s) {
     description: 'List your rooms, who is connected in each room, and the number of unread messages.',
     inputSchema: {}
   }, async () => {
-    const m = getMesh()
-    return text({ you: { name: m.name, fingerprint: m.fingerprint }, rooms: m.status() })
+    try {
+      const m = getMesh()
+      return text({ you: { name: m.name, fingerprint: m.fingerprint }, rooms: m.status() })
+    } catch (err) { return fail(err) }
   })
 
   s.registerTool('send_message', {
@@ -149,15 +152,21 @@ function registerTools (s) {
   })
 }
 
+let stopping = false
 async function shutdown () {
-  try { if (mesh) await mesh.destroy() } finally { process.exit(0) }
+  if (stopping) return
+  stopping = true
+  const timeout = new Promise(resolve => setTimeout(resolve, 3000))
+  try { if (mesh) await Promise.race([mesh.destroy(), timeout]) } finally { process.exit(0) }
 }
 
 server.server.oninitialized = () => {
   initialised = true
   // Start the swarm only after the handshake, so a short-lived probe process
   // never joins the network.
-  setImmediate(getMesh)
+  setImmediate(() => {
+    try { getMesh() } catch (err) { console.error('walkie-mcp: could not start: ' + err.message) }
+  })
 }
 process.stdin.on('close', shutdown)
 process.on('SIGTERM', shutdown)

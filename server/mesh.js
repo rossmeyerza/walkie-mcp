@@ -7,15 +7,22 @@ import { deriveRoomKeys, seal, open } from './crypto.js'
 export const MAX_TEXT = 16000
 const MAX_LINE = 64 * 1024
 const MAX_INBOX = 500
-const AUTH_TIMEOUT_MS = 30000
+const AUTH_TIMEOUT_MS = 5000
 const MAX_BAD_FRAMES = 64
+const MAX_UNAUTHENTICATED = 16
+const BAN_MS = 10 * 60 * 1000
+const RATE_WINDOW_MS = 60 * 1000
+const RATE_MAX = 30
+const ID_RE = /^[0-9a-f]{16}$/
+const NAME_PAD = 64
 
+// Names reach the model, so allow only letters, digits, spaces and . _ ' -
 export function cleanName (value, fallback = 'unknown') {
-  const name = String(value ?? '').replace(/[\x00-\x1f\x7f<>]/g, '').trim().slice(0, 40)
+  const name = String(value ?? '').normalize('NFKC').replace(/[^\p{L}\p{N} ._'-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40)
   return name || fallback
 }
 
-const fingerprint = buf => buf.toString('hex').slice(0, 8)
+const fingerprint = buf => buf.toString('hex').slice(0, 16)
 
 export class Mesh extends EventEmitter {
   // Each process gets a fresh key pair. Claude Desktop and several Claude Code
@@ -23,7 +30,12 @@ export class Mesh extends EventEmitter {
   constructor ({ name, bootstrap } = {}) {
     super()
     this.name = cleanName(name, 'agent')
-    this.swarm = new Hyperswarm(bootstrap ? { bootstrap } : {})
+    this.banned = new Map()
+    this.swarm = new Hyperswarm({
+      ...(bootstrap ? { bootstrap } : {}),
+      // Reject keys that recently failed to prove room membership.
+      firewall: remotePublicKey => this._isBanned(remotePublicKey.toString('hex'))
+    })
     this.publicKey = this.swarm.keyPair.publicKey
     this.fingerprint = fingerprint(this.publicKey)
     this.rooms = new Map()
@@ -34,12 +46,15 @@ export class Mesh extends EventEmitter {
   }
 
   join ({ room, secret }) {
-    if (this.rooms.has(room)) return this.rooms.get(room)
+    const existing = this.rooms.get(room)
+    if (existing && existing.secret !== secret) throw new Error('You are already in a different room called "' + room + '". Leave it first.')
+    if (existing) return existing
+    this.banned.clear() // A peer dropped after an earlier leave may be a member again.
     const { topic, key } = deriveRoomKeys({ room, secret })
     const entry = { room, secret, topic, key, peers: new Map(), inbox: [], seen: new Set() }
     entry.discovery = this.swarm.join(topic, { server: true, client: true })
     this.rooms.set(room, entry)
-    for (const state of this.conns) this._sendFrame(state, entry, { t: 'hello', name: this.name })
+    for (const state of this.conns) this._sendFrame(state, entry, this._hello())
     return entry
   }
 
@@ -48,6 +63,7 @@ export class Mesh extends EventEmitter {
     if (!entry) return false
     for (const peer of entry.peers.values()) this._sendFrame(peer.state, entry, { t: 'bye' })
     this.rooms.delete(room)
+    for (const state of this.conns) state.rooms.delete(room)
     await this.swarm.leave(entry.topic)
     return true
   }
@@ -59,10 +75,13 @@ export class Mesh extends EventEmitter {
     if (!body.trim()) throw new Error('The message is empty.')
     if (body.length > MAX_TEXT) throw new Error('The message is too long (maximum ' + MAX_TEXT + ' characters).')
     const id = crypto.randomBytes(8).toString('hex')
+    const payload = { t: 'msg', id, name: this.name, text: body }
+    // Base64 adds a third, and the frame adds about 100 bytes.
+    if (Math.ceil(Buffer.byteLength(JSON.stringify(payload)) * 4 / 3) + 200 > MAX_LINE) throw new Error('The message is too large to send. Make it shorter.')
     entry.seen.add(id)
     let delivered = 0
     for (const peer of entry.peers.values()) {
-      if (this._sendFrame(peer.state, entry, { t: 'msg', id, name: this.name, text: body })) delivered++
+      if (this._sendFrame(peer.state, entry, payload)) delivered++
     }
     return { id, delivered }
   }
@@ -119,26 +138,58 @@ export class Mesh extends EventEmitter {
   }
 
   _onConnection (conn) {
-    const state = { conn, remotePublicKey: conn.remotePublicKey, fingerprint: fingerprint(conn.remotePublicKey), rooms: new Set(), buf: '', bad: 0 }
+    const key = conn.remotePublicKey.toString('hex')
+    const state = { conn, key, remotePublicKey: conn.remotePublicKey, fingerprint: fingerprint(conn.remotePublicKey), rooms: new Set(), chunks: [], size: 0, bad: 0, sent: [] }
     this.conns.add(state)
-    for (const entry of this.rooms.values()) this._sendFrame(state, entry, { t: 'hello', name: this.name })
-    // A peer that cannot prove it holds a room secret is dropped.
-    state.timer = setTimeout(() => { if (!state.rooms.size) conn.destroy() }, AUTH_TIMEOUT_MS)
+    if ([...this.conns].filter(s => !s.rooms.size).length > MAX_UNAUTHENTICATED) return conn.destroy()
+    for (const entry of this.rooms.values()) this._sendFrame(state, entry, this._hello())
+    this._startAuthTimer(state)
     conn.on('data', data => this._onData(state, data))
     conn.on('error', () => {})
     conn.on('close', () => this._onClose(state))
   }
 
+  // A peer that cannot prove it holds a room secret is dropped and banned.
+  _startAuthTimer (state) {
+    clearTimeout(state.timer)
+    state.timer = setTimeout(() => { if (!state.rooms.size) this._reject(state) }, AUTH_TIMEOUT_MS)
+  }
+
+  _reject (state) {
+    this.banned.set(state.key, Date.now() + BAN_MS)
+    state.conn.destroy()
+  }
+
+  _isBanned (key) {
+    const until = this.banned.get(key)
+    if (until && until > Date.now()) return true
+    this.banned.delete(key)
+    return false
+  }
+
+  _hello () {
+    // Pad so that the frame length does not show the name length.
+    return { t: 'hello', name: this.name, pad: '.'.repeat(NAME_PAD - this.name.length) }
+  }
+
   _onData (state, data) {
-    state.buf += data.toString('utf8')
+    let start = 0
     let idx
-    while ((idx = state.buf.indexOf('\n')) !== -1) {
-      const line = state.buf.slice(0, idx)
-      state.buf = state.buf.slice(idx + 1)
+    while ((idx = data.indexOf(10, start)) !== -1) {
+      state.chunks.push(data.subarray(start, idx))
+      const line = Buffer.concat(state.chunks)
+      state.chunks = []
+      state.size = 0
+      start = idx + 1
       if (line.length > MAX_LINE) return state.conn.destroy()
-      if (line.trim()) this._onFrame(state, line)
+      this._onFrame(state, line.toString('utf8'))
+      if (state.conn.destroyed) return
     }
-    if (state.buf.length > MAX_LINE) state.conn.destroy()
+    if (start < data.length) {
+      state.chunks.push(data.subarray(start))
+      state.size += data.length - start
+      if (state.size > MAX_LINE) state.conn.destroy()
+    }
   }
 
   _onFrame (state, line) {
@@ -154,13 +205,13 @@ export class Mesh extends EventEmitter {
   }
 
   _onPayload (state, entry, payload) {
-    const current = entry.peers.get(state.fingerprint)
+    const current = entry.peers.get(state.key)
     const isNew = !current || current.state !== state
     if (isNew) this._addPeer(state, entry, payload, Boolean(current))
-    const peer = entry.peers.get(state.fingerprint)
+    const peer = entry.peers.get(state.key)
     if (payload.t === 'hello') {
       peer.name = cleanName(payload.name, peer.name)
-      if (isNew && !payload.reply) this._sendFrame(state, entry, { t: 'hello', name: this.name, reply: true })
+      if (isNew && !payload.reply) this._sendFrame(state, entry, { ...this._hello(), reply: true })
     } else if (payload.t === 'msg') {
       this._onMessage(state, entry, peer, payload)
     } else if (payload.t === 'bye') {
@@ -169,27 +220,38 @@ export class Mesh extends EventEmitter {
   }
 
   _onMessage (state, entry, peer, payload) {
-    if (typeof payload.id !== 'string' || payload.id.length > 64 || entry.seen.has(payload.id)) return
+    if (typeof payload.id !== 'string' || !ID_RE.test(payload.id) || entry.seen.has(payload.id)) return
     if (typeof payload.text !== 'string' || payload.text.length > MAX_TEXT) return
+    if (this._rateLimited(state)) return
     entry.seen.add(payload.id)
     if (entry.seen.size > 5000) entry.seen.delete(entry.seen.values().next().value)
     peer.name = cleanName(payload.name, peer.name)
     this._deliver(entry, { kind: 'message', id: payload.id, from: peer.name, fingerprint: state.fingerprint, text: payload.text })
   }
 
+  // Each peer may send RATE_MAX messages in each RATE_WINDOW_MS, over all rooms.
+  _rateLimited (state) {
+    const now = Date.now()
+    state.sent = state.sent.filter(t => now - t < RATE_WINDOW_MS)
+    if (state.sent.length >= RATE_MAX) return true
+    state.sent.push(now)
+    return false
+  }
+
   _addPeer (state, entry, payload, known) {
     const name = cleanName(payload.name)
-    entry.peers.set(state.fingerprint, { state, name, fingerprint: state.fingerprint })
+    entry.peers.set(state.key, { state, name, fingerprint: state.fingerprint })
     state.rooms.add(entry.room)
     clearTimeout(state.timer)
     if (!known) this._deliver(entry, { kind: 'joined', from: name, fingerprint: state.fingerprint })
   }
 
   _removePeer (state, entry) {
-    const peer = entry.peers.get(state.fingerprint)
+    const peer = entry.peers.get(state.key)
     if (!peer || peer.state !== state) return
-    entry.peers.delete(state.fingerprint)
+    entry.peers.delete(state.key)
     state.rooms.delete(entry.room)
+    if (!state.rooms.size && !state.conn.destroyed) this._startAuthTimer(state)
     this._deliver(entry, { kind: 'left', from: peer.name, fingerprint: state.fingerprint })
   }
 

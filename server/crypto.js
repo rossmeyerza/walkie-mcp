@@ -3,14 +3,14 @@
 // Security model: the room secret never leaves the machine. The swarm topic
 // and the message key are derived from it with separate HKDF labels, so the
 // topic (which public DHT nodes can see) gives no access to the room. Every
-// frame is sealed with AES-256-GCM and bound to the sender and receiver public
-// keys of the Noise connection, so a frame cannot be forged, read, replayed on
-// another connection or reflected without the room secret.
+// frame is sealed with AES-256-GCM and bound to the static Noise public keys of
+// the sender and the receiver. Noise authenticates those keys, so a frame
+// cannot be forged, read, moved to another peer or reflected without the secret.
 import crypto from 'node:crypto'
 
 export const PROTOCOL = 'walkie-mcp/v1'
 const INVITE_PREFIX = 'walkie-mcp:v1:'
-const ROOM_RE = /^[a-z0-9][a-z0-9-]{0,39}$/
+const ROOM_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/
 const SECRET_BYTES = 32
 const NONCE_BYTES = 12
 
