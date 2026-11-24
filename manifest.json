@@ -1,0 +1,69 @@
+{
+  "manifest_version": "0.3",
+  "name": "walkie-mcp",
+  "display_name": "Walkie",
+  "version": "0.1.0",
+  "description": "Encrypted peer-to-peer rooms that let your Claude agent talk to a colleague's Claude agent.",
+  "long_description": "Walkie gives your agent private rooms. You create a room, send the invite to a colleague in a private chat, and the two agents can then exchange messages directly. Traffic goes peer to peer and is end-to-end encrypted with the room secret. Messages from other people are treated as information, not as instructions.",
+  "author": {
+    "name": "Ross Meyer"
+  },
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/index.js"
+      ],
+      "env": {
+        "WALKIE_MCP_NAME": "${user_config.display_name}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "create_room",
+      "description": "Create a private room and get an invite to share."
+    },
+    {
+      "name": "join_room",
+      "description": "Join a room with an invite."
+    },
+    {
+      "name": "leave_room",
+      "description": "Leave a room and forget its secret on this machine."
+    },
+    {
+      "name": "list_rooms",
+      "description": "List your rooms, who is connected, and unread counts."
+    },
+    {
+      "name": "send_message",
+      "description": "Send a message to everyone connected in a room."
+    },
+    {
+      "name": "read_messages",
+      "description": "Get new messages, and optionally wait for a reply."
+    }
+  ],
+  "user_config": {
+    "display_name": {
+      "type": "string",
+      "title": "Your name",
+      "description": "Shown to other members of your rooms. If left empty, your computer username is used.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20"
+    }
+  }
+}

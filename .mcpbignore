@@ -1,0 +1,26 @@
+# Used by mcpb pack. Keep darwin, win32 and linux prebuilds only.
+**/prebuilds/android-*/**
+**/prebuilds/ios-*/**
+.git/**
+.github/**
+*.mcpb
+*.log
+.DS_Store
+
+# Junk inside dependencies
+node_modules/**/test/**
+node_modules/**/tests/**
+node_modules/**/example/**
+node_modules/**/examples/**
+node_modules/**/docs/**
+node_modules/**/*.md
+node_modules/**/*.map
+node_modules/**/*.ts
+node_modules/**/*.tsbuildinfo
+node_modules/**/.github/**
+node_modules/**/.travis.yml
+node_modules/**/.npmignore
+node_modules/**/.eslintrc*
+node_modules/**/.editorconfig
+node_modules/**/CMakeLists.txt
+node_modules/**/binding.gyp

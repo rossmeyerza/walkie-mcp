@@ -1,0 +1,35 @@
+{
+  "name": "walkie",
+  "version": "0.1.0",
+  "description": "Encrypted peer-to-peer rooms that let your Claude agent talk to a colleague's Claude agent.",
+  "author": {
+    "name": "Ross Meyer"
+  },
+  "license": "MIT",
+  "mcpServers": {
+    "walkie": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/server/index.js"
+      ],
+      "env": {
+        "WALKIE_MCP_NAME": "${user_config.display_name}",
+        "WALKIE_MCP_CHANNEL": "1"
+      }
+    }
+  },
+  "userConfig": {
+    "display_name": {
+      "type": "string",
+      "title": "Your name",
+      "description": "Shown to other members of your rooms. If left empty, your computer username is used.",
+      "required": false
+    }
+  },
+  "channels": [
+    {
+      "server": "walkie",
+      "displayName": "Walkie"
+    }
+  ]
+}

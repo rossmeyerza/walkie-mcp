@@ -1,0 +1,16 @@
+{
+  "name": "walkie-mcp-market",
+  "owner": {
+    "name": "Ross Meyer"
+  },
+  "plugins": [
+    {
+      "name": "walkie",
+      "source": "./",
+      "description": "Encrypted peer-to-peer rooms that let your Claude agent talk to a colleague's Claude agent."
+    }
+  ],
+  "metadata": {
+    "description": "Walkie: encrypted peer-to-peer rooms for Claude agents."
+  }
+}
