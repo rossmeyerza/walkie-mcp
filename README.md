@@ -1,6 +1,6 @@
 # walkie-mcp
 
-walkie-mcp lets Claude agents that belong to different people talk to each other in private rooms. It is a local MCP server for Claude Desktop and Claude Code. Messages go directly between the computers, peer to peer, with end-to-end encryption. No server stores or relays the messages.
+walkie-mcp lets Claude agents that belong to different people talk to each other in private rooms. It is a local MCP server for Claude Desktop and Claude Code. Messages go from computer to computer, peer to peer, with end-to-end encryption. No server stores or relays the messages.
 
 The design comes from [walkie](https://github.com/vikasprogrammer/walkie) (MIT). walkie-mcp uses a different protocol, so it cannot talk to walkie rooms.
 
@@ -26,17 +26,17 @@ In Claude Desktop, the agent sees new messages only when it calls `read_messages
 
 - The invite contains a random 256-bit secret. The secret never goes onto the network.
 - The server derives two values from the secret with HKDF-SHA256: a topic and a message key. The topic is the meeting point on the public Hyperswarm DHT, so DHT nodes can see it. The topic does not give access to the room.
-- Each frame is encrypted and authenticated with AES-256-GCM and the message key. Each frame is also bound to the public keys of the two ends of the connection, so a frame cannot be moved to another connection.
+- The server encrypts and authenticates each frame with AES-256-GCM and the message key. It also binds each frame to the public keys of the two ends of the connection, so nobody can move a frame to another connection.
 - A peer becomes a room member only when it sends a frame that decrypts with the room key. The server disconnects a peer that proves no membership within 5 seconds and blocks its key for 10 minutes.
 - Each member can send 30 messages a minute. The server drops messages above that limit.
 - Sender names can contain only letters, digits, spaces and `. _ ' -`. Message text goes to the agent as JSON, after a warning that the text is untrusted.
-- Messages stay in memory only. The server writes the room names and secrets to `~/.walkie-mcp/rooms.json` (file mode 0600), so that it can join the rooms again after a restart.
+- Messages stay in memory. The server writes the room names and secrets to `~/.walkie-mcp/rooms.json` (file mode 0600), so that it can join the rooms again after a restart.
 
 Limits that you must know:
 
 - Each person who has the invite can read and post. Send the invite only in a private chat.
 - A member can choose any display name. The fingerprint identifies the sending session, and it changes when the app restarts.
-- Messages are not stored. A member who is offline does not get them.
+- Nothing stores the messages. A member who is offline does not get them.
 - Peers find each other through the public Hyperswarm DHT. The DHT sees the topic and the IP addresses of the members, but not the room name, the names of the members or the messages.
 - Some corporate networks block the UDP traffic that Hyperswarm needs.
 
@@ -69,7 +69,7 @@ claude plugin marketplace add <path-or-git-url-of-this-repo>
 claude plugin install walkie@walkie-mcp-market
 ```
 
-The tools work in each session. To get pushed messages, start Claude Code with the channel. Custom channels are not on the Anthropic allowlist, so you must use the development flag:
+The tools work in each session. In Claude Code, the server does not join your saved rooms when a session starts, because each session would become a separate member. To go back into a saved room, ask the agent to join it by name. To get pushed messages, start Claude Code with the channel. Custom channels are not on the Anthropic allowlist, so you must use the development flag:
 
 ```bash
 claude --dangerously-load-development-channels plugin:walkie@walkie-mcp-market
