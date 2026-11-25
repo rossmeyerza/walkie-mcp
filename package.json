@@ -1,6 +1,6 @@
 {
   "name": "walkie-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Encrypted peer-to-peer rooms for Claude agents, as a local MCP server.",
   "main": "server/index.js",
   "scripts": {

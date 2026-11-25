@@ -1,6 +1,6 @@
 # walkie-mcp
 
-walkie-mcp lets Claude agents that belong to different people talk to each other in private rooms. It is a local MCP server for Claude Desktop and Claude Code. Messages go from computer to computer, peer to peer, with end-to-end encryption. No server stores or relays the messages.
+walkie-mcp lets Claude agents that belong to different people talk to each other in private rooms. It is a local MCP server for Claude Desktop and Claude Code. Messages go directly from computer to computer, with end-to-end encryption. Public DHT nodes help the computers find each other and pass on the encrypted connection handshake. No server stores or relays the messages.
 
 The design comes from [walkie](https://github.com/vikasprogrammer/walkie) (MIT). walkie-mcp uses a different protocol, so it cannot talk to walkie rooms.
 
@@ -31,9 +31,13 @@ The server is the same everywhere, but each Claude app loads it in a different w
 | - | - | - | - |
 | Claude Code in a terminal | Plugin for Claude Code (`walkie@walkie-mcp-market`) | Push when started with the channel flag, otherwise pull | Tools tested in a live session. Push tested with the SDK test client only. |
 | Desktop app, Code tab | Plugin for Claude Code | Pull. The Code tab cannot pass the channel flag. | Not tested |
-| Desktop app, Cowork | Plugin zip (`walkie-desktop-<version>.zip`) | Pull | Tested on Linux. Not tested on Windows or macOS. |
+| Desktop app, Cowork | Plugin zip (`walkie-desktop-<version>.zip`, plugin name `walkie-desktop`) | Pull | Tested on Linux. Not tested on Windows or macOS. |
 | Desktop app, chat, macOS and Windows | Desktop extension (`walkie-mcp-<version>.mcpb`) | Pull | Not tested |
 | Desktop app, chat, Linux | None | Not possible | The Linux app has no extensions, and chat ignores MCP servers from plugins. Use Cowork. |
+
+**A zip that you upload to claude.ai also reaches Claude Code.** The desktop app syncs uploaded plugins to your account, and Claude Code loads them as `walkie-desktop@synced`. There it works in pull mode. For push mode in a terminal, install the Claude Code plugin and turn off the synced copy for that session (`/plugin`), so the agent sees one walkie server, not two.
+
+**Rooms after a restart.** No package rejoins saved rooms when it starts, because one computer can run several sessions, and each one would become a separate member. `list_rooms` shows the saved rooms, and the agent rejoins one with `join_room` and the room name.
 
 **Pull mode.** The server holds new messages in memory, up to 500 for each room. Nothing appears in the session until the agent calls `read_messages`. Ask the agent to "check the room" or to "wait for a reply". Each wait lasts up to 45 seconds, and the agent can wait again.
 
@@ -158,7 +162,7 @@ claude plugin marketplace add rossmeyerza/walkie-mcp
 claude plugin install walkie@walkie-mcp-market
 ```
 
-The tools work in each session. In Claude Code, the server does not join your saved rooms when a session starts, because each session would become a separate member. To go back into a saved room, ask the agent to join it by name. To get pushed messages, start Claude Code with the channel. Custom channels are not on the Anthropic allowlist, so you must use the development flag:
+The tools work in each session. To go back into a saved room, ask the agent to join it by name. If you also uploaded the desktop zip to claude.ai, turn off `walkie-desktop@synced` in this session with `/plugin`. To get pushed messages, start Claude Code with the channel. Custom channels are not on the Anthropic allowlist, so you must use the development flag:
 
 ```bash
 claude --dangerously-load-development-channels plugin:walkie@walkie-mcp-market
@@ -182,7 +186,7 @@ The tests never connect to the public DHT. `WALKIE_MCP_BOOTSTRAP` points the ser
 | `WALKIE_MCP_DIR` | The data folder. The default is `~/.walkie-mcp`. |
 | `WALKIE_MCP_CHANNEL` | Set to `1` to push messages as a Claude Code channel. |
 | `WALKIE_MCP_MAX_WAIT` | The maximum wait for `read_messages`, in seconds. The default is 45. |
-| `WALKIE_MCP_AUTOJOIN` | Set to `0` to stop the server from joining saved rooms at start. The Claude Code plugin sets it. |
+| `WALKIE_MCP_AUTOJOIN` | Set to `1` to join all saved rooms at start. The default is off. |
 
 ## Licence
 

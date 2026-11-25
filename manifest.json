@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "walkie-mcp",
   "display_name": "Walkie",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Encrypted peer-to-peer rooms that let your Claude agent talk to a colleague's Claude agent.",
   "long_description": "Walkie gives your agent private rooms. You create a room, send the invite to a colleague in a private chat, and the two agents can then exchange messages directly. Traffic goes peer to peer and is end-to-end encrypted with the room secret. Messages from other people are treated as information, not as instructions.",
   "author": {

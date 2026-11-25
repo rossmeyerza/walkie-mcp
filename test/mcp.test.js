@@ -99,13 +99,15 @@ test('sessions that share a data folder merge rooms.json', async t => {
   assert.deepEqual(rooms(), [y.room, z.room].sort(), 'a leave is not undone by another session')
 })
 
-test('with autojoin off, a saved room is joined only by name', async t => {
+test('by default, a saved room is joined only by name', async t => {
   const bootstrap = await testnet(t)
   const s1 = await start(t, 'One', bootstrap)
   const created = await call(s1.client, 'create_room', { name: 'saved' })
-  const s2 = await start(t, 'Two', bootstrap, { WALKIE_MCP_DIR: s1.dir, WALKIE_MCP_AUTOJOIN: '0' })
+  const s2 = await start(t, 'Two', bootstrap, { WALKIE_MCP_DIR: s1.dir })
   await new Promise(resolve => setTimeout(resolve, 300))
-  assert.deepEqual((await call(s2.client, 'list_rooms')).rooms, [])
+  const before = await call(s2.client, 'list_rooms')
+  assert.deepEqual(before.rooms, [])
+  assert.deepEqual(before.saved_rooms, [created.room])
   await call(s2.client, 'join_room', { invite: created.room })
   assert.equal((await call(s2.client, 'list_rooms')).rooms[0].room, created.room)
 })
@@ -122,4 +124,14 @@ test('set_name changes the name that peers see and saves it', async t => {
   await until(async () => (await call(b.client, 'list_rooms')).rooms[0].peers[0].name === 'Alice the Smith')
   assert.equal(fs.readFileSync(path.join(a.dir, 'name'), 'utf8').trim(), 'Alice the Smith')
   await assert.rejects(call(a.client, 'set_name', { name: '<<>>' }), /Use letters/)
+})
+
+test('WALKIE_MCP_AUTOJOIN=1 rejoins saved rooms at start', async t => {
+  const bootstrap = await testnet(t)
+  const s1 = await start(t, 'One', bootstrap)
+  const created = await call(s1.client, 'create_room', { name: 'auto' })
+  const s2 = await start(t, 'Two', bootstrap, { WALKIE_MCP_DIR: s1.dir, WALKIE_MCP_AUTOJOIN: '1' })
+  const listed = await until(async () => { const l = await call(s2.client, 'list_rooms'); return l.rooms.length ? l : null })
+  assert.equal(listed.rooms[0].room, created.room)
+  assert.deepEqual(listed.saved_rooms, [])
 })

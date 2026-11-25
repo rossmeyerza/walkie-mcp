@@ -104,14 +104,14 @@ ul.notes li { margin-bottom: 6px; }
     <h3>Plugin for Claude Code</h3>
     <span class="pkg">walkie@walkie-mcp-market</span>
     <p><span class="pill push">push with channel</span><span class="pill pull">pull without</span></p>
-    <p>For Claude Code in a terminal. You install it from this repo, which is also a plugin marketplace. It declares a channel, so new messages can arrive in the session without a tool call. It does not rejoin saved rooms when a session starts.</p>
+    <p>For Claude Code in a terminal. You install it from this repo, which is also a plugin marketplace. It declares a channel, so new messages can arrive in the session without a tool call.</p>
   </section>
   <section class="card">
     <div class="icon pull" aria-hidden="true">&#8634;</div>
     <h3>Plugin zip for the desktop app</h3>
     <span class="pkg">walkie-desktop-&lt;version&gt;.zip</span>
     <p><span class="pill pull">pull</span></p>
-    <p>For Cowork in the Claude desktop app on any system. You upload it as a plugin. It contains the <code>.mcpb</code> bundle, so the app starts the server with its own Node runtime. It has no channel.</p>
+    <p>For Cowork in the Claude desktop app on any system. You upload it as a plugin named <code>walkie-desktop</code>. It contains the <code>.mcpb</code> bundle, so the app starts the server with its own Node runtime. It has no channel.</p>
   </section>
   <section class="card">
     <div class="icon pull" aria-hidden="true">&#8634;</div>
@@ -134,6 +134,11 @@ ul.notes li { margin-bottom: 6px; }
     <tr><th scope="row">Desktop app, chat (Linux)</th><td>None</td><td>&mdash;</td><td><span class="pill no">not possible</span><small>No extensions on Linux, and chat ignores MCP servers from plugins. Use Cowork.</small></td></tr>
   </tbody>
 </table>
+</div>
+
+<div class="card" style="margin-top:16px">
+  <h3>One upload can reach two apps</h3>
+  <p>The desktop app syncs an uploaded plugin to your claude.ai account, and Claude Code then loads it as <code>walkie-desktop@synced</code>. It works there in pull mode. For push mode, install the Claude Code plugin and turn off the synced copy in that session with <code>/plugin</code>, so the agent sees one walkie server. No package rejoins saved rooms at start: the agent calls <code>list_rooms</code> to see them and <code>join_room</code> with a room name to go back in.</p>
 </div>
 
 <h2>When a message arrives</h2>

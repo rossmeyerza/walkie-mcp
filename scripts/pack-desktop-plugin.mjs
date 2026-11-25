@@ -18,8 +18,10 @@ function run (cmd, args, cwd) {
   if (r.status !== 0) throw new Error(cmd + ' ' + args.join(' ') + ' failed')
 }
 
+// The desktop zip has its own plugin name. A zip uploaded to claude.ai also
+// syncs to Claude Code, and it must not clash with the Claude Code plugin.
 function manifest (mcpServers) {
-  return { name: 'walkie', displayName: 'Walkie', version: pkg.version, description: pkg.description, author: { name: 'Ross Meyer' }, license: 'MIT', mcpServers }
+  return { name: 'walkie-desktop', displayName: 'Walkie (desktop)', version: pkg.version, description: pkg.description, author: { name: 'Ross Meyer' }, license: 'MIT', mcpServers }
 }
 
 function build (name, mcpServers, fill) {
@@ -40,7 +42,7 @@ build('walkie-desktop', './walkie-mcp.mcpb', stage => {
 })
 
 build('walkie-desktop-node', {
-  walkie: { command: 'node', args: [PLUGIN_ROOT + '/server/index.js'], env: { WALKIE_MCP_AUTOJOIN: '0' } }
+  walkie: { command: 'node', args: [PLUGIN_ROOT + '/server/index.js'] }
 }, stage => {
   fs.cpSync(path.join(root, 'server'), path.join(stage, 'server'), { recursive: true })
   for (const f of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(root, f), path.join(stage, f))

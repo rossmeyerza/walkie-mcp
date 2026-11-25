@@ -1,6 +1,6 @@
 {
   "name": "walkie",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Encrypted peer-to-peer rooms that let your Claude agent talk to a colleague's Claude agent.",
   "author": {
     "name": "Ross Meyer"
@@ -13,8 +13,7 @@
         "${CLAUDE_PLUGIN_ROOT}/server/index.js"
       ],
       "env": {
-        "WALKIE_MCP_CHANNEL": "1",
-        "WALKIE_MCP_AUTOJOIN": "0"
+        "WALKIE_MCP_CHANNEL": "1"
       }
     }
   },
