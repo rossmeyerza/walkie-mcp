@@ -48,6 +48,8 @@ The server is the same everywhere, but each Claude app loads it in a different w
 
 ## Security model
 
+For the full detail of how the keys are made and used, see [Keys in depth](#keys-in-depth).
+
 - The invite contains a random 256-bit secret. The secret never goes onto the network.
 - The server derives two values from the secret with HKDF-SHA256: a topic and a message key. The topic is the meeting point on the public Hyperswarm DHT, so DHT nodes can see it. The topic does not give access to the room.
 - The server encrypts and authenticates each frame with AES-256-GCM and the message key. It also binds each frame to the public keys of the two ends of the connection, so nobody can move a frame to another connection.
@@ -63,6 +65,59 @@ Limits that you must know:
 - Nothing stores the messages. A member who is offline does not get them.
 - Peers find each other through the public Hyperswarm DHT. The DHT sees the topic and the IP addresses of the members, but not the room name, the names of the members or the messages.
 - Some corporate networks block the UDP traffic that Hyperswarm needs.
+
+## Keys in depth
+
+walkie-mcp uses two layers of encryption. Hyperswarm protects each connection between two computers. walkie-mcp protects each room. Only the first layer uses Diffie-Hellman.
+
+### Layer 1: the connection (Hyperswarm, with Diffie-Hellman)
+
+- At start, each server process makes a new Ed25519 key pair in memory. It does not save the key pair, so a restart gives a new key and a new fingerprint.
+- When two computers connect, Hyperswarm runs a Noise `IK` handshake (`hyperdht/lib/noise-wrap.js`). The handshake combines several Diffie-Hellman operations on the Ed25519 curve (`noise-curve-ed`). It uses a fresh ephemeral key for each connection and the static key of each side.
+- The handshake gives two session keys. All traffic on the link then goes through libsodium `secretstream` with XChaCha20-Poly1305.
+- Each connection has its own ephemeral keys, so the link has forward secrecy. Somebody who records the traffic cannot decrypt it later, even if they steal a static key or the room secret.
+- The handshake proves which public key is at the other end. It does not prove that the peer is a room member, and anyone can complete it. That is why layer 2 exists.
+
+### Layer 2: the room (walkie-mcp, with a pre-shared key)
+
+The room key uses no Diffie-Hellman. The invite carries the shared secret, and you send the invite in a private Teams chat.
+
+1. `create_room` takes 32 random bytes from the operating system (`crypto.randomBytes`). This is the room secret. The invite contains it in base64url.
+2. Each server derives two values with HKDF-SHA256. The secret is the input key, `walkie-mcp/v1` is the salt, and the room name goes into the info string:
+   - `topic:<room>` gives the topic. Hyperswarm announces it on the public DHT. It gives no access to the room.
+   - `message-key:<room>` gives the message key. It never leaves the computer.
+3. The server seals each frame with AES-256-GCM and the message key. Each frame gets a random 96-bit nonce. The authenticated data contains the protocol name and the Noise public keys of the sender and the receiver.
+4. A peer becomes a member when one of its frames decrypts. The check fails for a frame that somebody changed, reflected back to its sender, or moved to another connection.
+
+Each frame is encrypted twice on the wire: once with the room key and once with the Noise session key.
+
+### Why the room layer has no Diffie-Hellman
+
+Diffie-Hellman agrees a key between two parties, but it does not show who those parties are. To keep out strangers, each side must check the identity of the other, for example with a known public key. walkie-mcp has no list of trusted keys, so a key exchange alone would let anyone join. The invite solves both problems at once: the people who get it through Teams are the members, and the secret in it is the shared key. Noise already supplies the Diffie-Hellman for each link.
+
+### What this protects, and what it does not
+
+| Situation | Result |
+| - | - |
+| A DHT node or a network observer records traffic | It cannot read it: two layers of encryption, and the Noise layer has forward secrecy. |
+| An outsider learns the topic and connects | It completes the Noise handshake, but no frame decrypts in either direction. The server drops it after 5 seconds. |
+| Somebody gets the invite | They can join and read new messages until the members stop using the room. They cannot read messages from before they joined, because nothing stores them. |
+| A member misbehaves | You cannot remove a member or change the key. Make a new room and send the new invite only to the people you trust. |
+| A member uses another person's name | Names are not authenticated. Compare fingerprints, which change at each restart. |
+
+### Where the secret is kept
+
+- In the Teams chat that carried the invite.
+- In the transcripts of each agent that created or joined the room, because the agent sees the invite.
+- In `~/.walkie-mcp/rooms.json`, in plain text with file mode 0600.
+
+Treat each of these places as a copy of the key. Leave the room with `leave_room` when the work is done, so the server deletes its copy.
+
+### Possible improvements (not built)
+
+- Use the room key as a Noise pre-shared key (`XXpsk0`), so that an outsider cannot complete the handshake at all. This needs changes to how Hyperswarm connects, and I have not checked if Hyperswarm allows it.
+- Save a long-term identity key for each person, and let people compare fingerprints over Teams once. Names would then be verifiable.
+- Add key rotation, so a room can remove a member without a new invite.
 
 ## Known risks
 

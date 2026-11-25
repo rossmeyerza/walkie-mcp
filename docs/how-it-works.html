@@ -97,6 +97,25 @@ svg.focus .dim-able.on { opacity: 1; }
   .controls .spacer { display: none; }
   .swipe { display: block; }
 }
+
+.layers { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; }
+.layers h2 { font-size: 18px; margin: 0 0 6px; }
+.layers-lede { margin: 0 0 14px; color: var(--muted); }
+.ring { border-radius: 14px; padding: 12px 14px; }
+.ring.outer { border: 2px solid var(--amber); background: var(--amber-soft); }
+.ring.inner { border: 2px solid var(--teal); background: var(--teal-soft); margin-top: 10px; }
+.ring-label { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.ring-label span { color: var(--muted); font-size: 13px; }
+.core { margin-top: 10px; background: var(--panel); border: 1px dashed var(--line); border-radius: 10px; padding: 10px 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.layer-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.lc { border-radius: 12px; padding: 12px 16px; background: var(--soft); border: 1px solid var(--line); }
+.lc.outer-c { border-color: var(--amber); }
+.lc.inner-c { border-color: var(--teal); }
+.lc h3 { font-size: 15px; margin: 0 0 6px; }
+.lc ul { margin: 0; padding-left: 18px; color: var(--muted); }
+.lc li { margin-bottom: 4px; }
+.lc li b { color: var(--ink); }
+@media (max-width: 760px) { .layer-cards { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -242,6 +261,43 @@ svg.focus .dim-able.on { opacity: 1; }
     <p><b>Limits per member:</b> 30 messages a minute and 16,000 characters a message.</p>
   </section>
 </div>
+
+<section class="layers" aria-labelledby="layers-title">
+  <h2 id="layers-title">Two layers of encryption</h2>
+  <p class="layers-lede">Each message is encrypted twice on the wire. Only the outer layer uses Diffie-Hellman. The inner layer uses the secret from the invite.</p>
+  <div class="wire" role="img" aria-label="Nested boxes: the outer box is the Hyperswarm Noise link, made with Diffie-Hellman and encrypted with XChaCha20-Poly1305. Inside it is the walkie-mcp frame, sealed with AES-256-GCM and the room key. Inside that is the message.">
+    <div class="ring outer">
+      <div class="ring-label"><b>Layer 1: Noise link</b><span>Hyperswarm, for each connection</span></div>
+      <div class="ring inner">
+        <div class="ring-label"><b>Layer 2: room frame</b><span>walkie-mcp, for each room</span></div>
+        <div class="core">{"t":"msg","name":"Bob","text":"Can you send me the Q3 totals?"}</div>
+      </div>
+    </div>
+  </div>
+  <div class="layer-cards">
+    <div class="lc outer-c">
+      <h3>Layer 1: the connection</h3>
+      <ul>
+        <li><b>Key exchange:</b> Noise <code>IK</code> handshake with Diffie-Hellman on the Ed25519 curve.</li>
+        <li><b>Keys:</b> a new key pair for each server process, and fresh ephemeral keys for each connection.</li>
+        <li><b>Cipher:</b> XChaCha20-Poly1305 (libsodium secretstream).</li>
+        <li><b>Gives:</b> forward secrecy against anyone who records traffic, and proof of the public key at the other end.</li>
+        <li><b>Does not give:</b> room membership. Anyone can complete this handshake.</li>
+      </ul>
+    </div>
+    <div class="lc inner-c">
+      <h3>Layer 2: the room</h3>
+      <ul>
+        <li><b>Key exchange:</b> none. The invite carries a pre-shared secret, sent in a private Teams chat.</li>
+        <li><b>Keys:</b> 32 random bytes from the operating system, then HKDF-SHA256 with salt <code>walkie-mcp/v1</code> gives the topic and the message key.</li>
+        <li><b>Cipher:</b> AES-256-GCM with a random 96-bit nonce for each frame, bound to both Noise public keys.</li>
+        <li><b>Gives:</b> membership. Only holders of the invite can read or post.</li>
+        <li><b>Does not give:</b> member removal, key rotation or verified names.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="note">Why no Diffie-Hellman for the room: a key exchange agrees a key with whoever is at the other end, but it does not show who they are. Without a list of trusted keys, anyone could join. The invite decides who the members are and carries the key at the same time.</p>
+</section>
 
 <details>
   <summary>Text version of the steps</summary>
