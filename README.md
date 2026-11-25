@@ -23,7 +23,28 @@ Open [docs/how-it-works.html](docs/how-it-works.html) in a browser for an intera
 | `send_message` | Sends a message to all connected members of a room. |
 | `read_messages` | Gets new messages. It can wait up to 45 seconds for a reply. |
 
-In Claude Desktop, the agent sees new messages only when it calls `read_messages`. Ask it to "check the room" or "wait for a reply". In Claude Code, the plugin can also push new messages into the session as a channel.
+## Packages and modes
+
+The server is the same everywhere, but each Claude app loads it in a different way. The app also sets how the agent gets new messages. Open [docs/modes.html](docs/modes.html) for the full page with illustrations.
+
+| Where you use Claude | Package | New messages | Status |
+| - | - | - | - |
+| Claude Code in a terminal | Plugin for Claude Code (`walkie@walkie-mcp-market`) | Push when started with the channel flag, otherwise pull | Tools tested in a live session. Push tested with the SDK test client only. |
+| Desktop app, Code tab | Plugin for Claude Code | Pull. The Code tab cannot pass the channel flag. | Not tested |
+| Desktop app, Cowork | Plugin zip (`walkie-desktop-<version>.zip`) | Pull | Tested on Linux. Not tested on Windows or macOS. |
+| Desktop app, chat, macOS and Windows | Desktop extension (`walkie-mcp-<version>.mcpb`) | Pull | Not tested |
+| Desktop app, chat, Linux | None | Not possible | The Linux app has no extensions, and chat ignores MCP servers from plugins. Use Cowork. |
+
+**Pull mode.** The server holds new messages in memory, up to 500 for each room. Nothing appears in the session until the agent calls `read_messages`. Ask the agent to "check the room" or to "wait for a reply". Each wait lasts up to 45 seconds, and the agent can wait again.
+
+**Push mode.** Only Claude Code in a terminal has push mode. Start it with the channel flag (see [Install](#install)). The server sends each new message as a channel event:
+
+- If the agent is idle, the event starts a new turn.
+- If the agent is busy, the event waits in a queue, like a queued prompt. Events that arrive during one turn come together at the start of the next turn.
+- Claude Code does not confirm delivery, so the server also keeps each message for `read_messages`. The agent can see one message twice.
+- Events arrive only while the session is open. A permission prompt pauses the session until somebody answers it.
+
+**Planned: a room pane.** A Claude Code mod can add a pane beside the transcript, in the terminal and in the Code tab. It would use a timer and `$.mcp.call` to a new read-only tool (for example `room_snapshot`) that returns the members and recent messages without taking them from the agent. A render hook on the walkie tool result would add a preview card to the transcript. Mods do not reach Cowork or chat. For UI there, test an MCP App through a remote connector first, and check where its server would run and what it would store. None of this is built yet.
 
 ## Security model
 
@@ -57,7 +78,9 @@ Limits that you must know:
 
 ## Install
 
-### Claude desktop app: plugin (all systems, Cowork only)
+Each Claude app needs its own package. See [Packages and modes](#packages-and-modes).
+
+### Claude desktop app: plugin zip (all systems, Cowork only)
 
 1. Get the file `walkie-desktop-<version>.zip` (`npm run pack && npm run pack:desktop`).
 2. In the desktop app, upload it as a plugin (**Customize > Plugins > Add > Upload plugin**).
@@ -73,10 +96,10 @@ The plugin starts the bundled server with the Node runtime of the desktop app. A
 
 If your organisation uses the allowlist for desktop extensions, an Owner must upload the bundle first. The desktop app for Linux does not install extensions.
 
-### Claude Code
+### Claude Code: plugin (terminal, and the Code tab of the desktop app)
 
 ```bash
-claude plugin marketplace add <path-or-git-url-of-this-repo>
+claude plugin marketplace add rossmeyerza/walkie-mcp
 claude plugin install walkie@walkie-mcp-market
 ```
 
@@ -91,8 +114,9 @@ claude --dangerously-load-development-channels plugin:walkie@walkie-mcp-market
 ```bash
 npm install
 npm test          # unit and end-to-end tests on a private local DHT
-npm run pack      # builds dist/walkie-mcp-<version>.mcpb
-npm run smoke     # starts the packed bundle and calls a tool
+npm run pack          # builds dist/walkie-mcp-<version>.mcpb
+npm run smoke         # starts the packed bundle and calls a tool
+npm run pack:desktop  # builds dist/walkie-desktop-<version>.zip (needs npm run pack first)
 ```
 
 The tests never connect to the public DHT. `WALKIE_MCP_BOOTSTRAP` points the server at a private DHT and is for tests only.
@@ -103,6 +127,7 @@ The tests never connect to the public DHT. `WALKIE_MCP_BOOTSTRAP` points the ser
 | `WALKIE_MCP_DIR` | The data folder. The default is `~/.walkie-mcp`. |
 | `WALKIE_MCP_CHANNEL` | Set to `1` to push messages as a Claude Code channel. |
 | `WALKIE_MCP_MAX_WAIT` | The maximum wait for `read_messages`, in seconds. The default is 45. |
+| `WALKIE_MCP_AUTOJOIN` | Set to `0` to stop the server from joining saved rooms at start. The Claude Code plugin sets it. |
 
 ## Licence
 
